@@ -6,6 +6,7 @@ class LocalContext:
         self.combinefunc = combinefunc
         if combinefunc is not None:
             self.combined = LocalContext()
+        self.counters= {}
 
     def write(self, key, value):
         self.result.setdefault(key, []).append(value)
@@ -28,6 +29,39 @@ class LocalContext:
         for k, vlist in self.combined.result.iteritems():
             for v in vlist:
                 self.result.setdefault(k, []).append(v)
+
+    def getCounter(self,counterGroup,counterName):
+        group = self.counters.get(counterGroup,{})
+        counter = group.get(counterName,None)
+        if counter: #if counter exists return it
+            return counter
+        elif group: #if counter doesn't exist but group does, add counter and return it
+            group[counterName] = LocalCounter()
+            return group[counterName]
+        else: #if counter and group don't exist, add both and return counter
+            self.counters[counterGroup] = {counterName: LocalCounter()}
+            return self.counters[counterGroup][counterName]
+
+    def printCounters(self):
+        import datetime
+        print datetime.datetime.utcnow().strftime('%y/%m/%d %H:%M:%S')+" INFO mapred.JobClient: Counters:"
+        groups = self.counters.keys()
+        for group in groups:
+            print datetime.datetime.utcnow().strftime('%y/%m/%d %H:%M:%S')+" INFO mapred.JobClient:   "+group
+            for name in self.counters[group].keys():
+                print datetime.datetime.utcnow().strftime('%y/%m/%d %H:%M:%S')+" INFO mapred.JobClient:     "+name+"="+str(self.counters[group][name])
+
+
+
+class LocalCounter:
+    def __init__(self):
+        self.value=0
+    def increment(self,n):
+        self.value+=n
+    def __repr__(self):
+        return str(self.value)
+
+
 
 def outputwithkey(rlist):
     for k, v in rlist:
@@ -63,12 +97,21 @@ def map_reduce(module, fd, outputpath):
         mapfunc('line_%s' % total_lines, line, context)
 
     context.finish()
+    #print map counters
+    if context.counters:
+        context.printCounters()
+
 
     if reducefunc:
         reduced_context = LocalContext()
         for key, values in context.result.iteritems():
             module.reduce(key, values, reduced_context)
         context = reduced_context
+
+    #print reduce counters
+    if context.counters:
+        context.printCounters()
+
 
     # By default, if the job has a reduce function, we want to print both
     # the key and the value.
